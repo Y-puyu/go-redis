@@ -57,6 +57,7 @@ func MakeMultiBulkReply(args [][]byte) *MultiBulkReply {
 }
 
 // ToBytes marshal redis.Reply
+// 将 [][]byte 转换成 RESP 协议的回复
 func (r *MultiBulkReply) ToBytes() []byte {
 	argLen := len(r.Args)
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"go-redis/config"
 	"go-redis/lib/logger"
+	"go-redis/resp/handler"
 	"go-redis/tcp"
-	EchoHandler "go-redis/tcp"
 	"os"
 )
 
@@ -41,7 +41,7 @@ func main() {
 				config.Properties.Bind,
 				config.Properties.Port),
 		},
-		EchoHandler.MakeHandler())
+		handler.MakeHandler())
 	if err != nil {
 		logger.Error(err)
 	}
