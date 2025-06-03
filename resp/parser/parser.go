@@ -80,12 +80,16 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 			continue
 		}
 
+		// 判断是否为多行解析模式
 		// 解析每一行数据
 		// 如果不是在读取一个多行数据，就是在读取一个新的数据行
 		// 新数据行的第一个字符，就是数据类型
 		// 根据不同的数据类型，进行数据解析
 		if !state.readingMultiLine {
 			// receive new response
+			// 如果还没在多行解析模式下，且用户发来的第一个字符是 *
+			// 则表示该数据是多行数据
+			// 则由 parseMultiBulkHeader 解析，并将 state 改为多行解析模式
 			if msg[0] == '*' {
 				// multi bulk reply
 				err = parseMultiBulkHeader(msg, &state)
@@ -96,6 +100,9 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 					state = readState{} // reset state
 					continue
 				}
+				// 特殊情况：如果是 *0 的话，则表示一个空的多行数据
+				// 则返回一个空多行数据
+				// 继续解析下一行数据即可，重置 state
 				if state.expectedArgsCount == 0 {
 					ch <- &Payload{
 						Data: &reply.EmptyMultiBulkReply{},
@@ -104,6 +111,10 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 					continue
 				}
 			} else if msg[0] == '$' { // bulk reply
+				// $4\r\nPING\r\n
+				// 在非多行模式的情况下，需要调用 parseBulkHeader 方法
+				// 将 state 改变为多行模式，并且进行数据解析
+				// 实际上 $4 和 PING 在这里是看作两行的
 				err = parseBulkHeader(msg, &state)
 				if err != nil {
 					ch <- &Payload{
@@ -112,6 +123,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 					state = readState{} // reset state
 					continue
 				}
+				// $-1\r\n 说明是空字符串
 				if state.bulkLen == -1 { // null bulk reply
 					ch <- &Payload{
 						Data: &reply.NullBulkReply{},
@@ -121,6 +133,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 				}
 			} else {
 				// single line reply
+				// 解析单行数据，不会更改解析器 state 的状态
 				result, err := parseSingleLineReply(msg)
 				ch <- &Payload{
 					Data: result,
@@ -131,6 +144,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 			}
 		} else {
 			// receive following bulk reply
+			// 已经是多行模式了
 			// 这里还是在读取多行数据
 			// 现在每一行就是一个独立的字符串进行处理即可
 			err = readBody(msg, &state)
@@ -150,7 +164,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 				if state.msgType == '*' {
 					result = reply.MakeMultiBulkReply(state.args)
 				} else if state.msgType == '$' {
-					result = reply.MakeBulkReply(state.args[0])
+					result = reply.MakeBulkReply(state.args[0]) // 单行字符串，注意传参方式
 				}
 				ch <- &Payload{
 					Data: result,
@@ -164,33 +178,41 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 
 // readLine 读取一行数据
 // 返回读取到的数据，是否遇到 io 错误，以及错误信息
+// 情况1: 没有预设个数，直接按照 \r\n 进行切分
+// 情况2: 之前读到 $ 数字，严格读取字符个数。防止 \r\n 是数据内容的一部分
 func readLine(bufReader *bufio.Reader, state *readState) ([]byte, bool, error) {
 	var msg []byte
 	var err error
 	// 如果 bulkLen == 0 则函数一直读取，直到遇到 \n 为止
-	// 待读取的字节数不确定
+	// 情况1: 待读取的字节数不确定，没有预设个数
+	// *3\r\n$3\r\nSET\r\n$3\r\nKEY\r\n$5\r\nVALUE\r\n
+	// 先读取 *3\r\n, 则返回 *3
 	if state.bulkLen == 0 {
 		msg, err = bufReader.ReadBytes('\n')
 		if err != nil {
 			return nil, true, err
 		}
-		if len(msg) == 0 || msg[len(msg)-2] != '\r' {
+		// 如果倒数第二个字符不是 \r 的话，就不是以 \r\n 结尾的，返回协议错误
+		if len(msg) < 2 || msg[len(msg)-2] != '\r' {
 			return nil, false, errors.New("protocol error: " + string(msg))
 		}
 	} else {
 		// 否则，仅读取 bulkLen+\r\n 个字符即可
-		// 待读取的字节数确定
+		// 待读取的字节数确定, 之前已经读到了 $数字
+		// $3 SET\r\n$3\r\nKEY\r\n$5\r\nVALUE\r\n
+		// 已经读到了 $3, 那么需要读到 set\r\n 总共 3+2=5 个字符
 		msg = make([]byte, state.bulkLen+2)
 		_, err = io.ReadFull(bufReader, msg)
 		if err != nil {
 			return nil, true, err
 		}
-		if len(msg) == 0 ||
+		// 判断是否为 \r\n 结尾
+		if len(msg) < 2 ||
 			msg[len(msg)-2] != '\r' ||
 			msg[len(msg)-1] != '\n' {
 			return nil, false, errors.New("protocol error: " + string(msg))
 		}
-		// 读取完毕，将 bulkLen 置 0
+		// 读取完毕，将 bulkLen 置 0, 该行已经读取完毕
 		state.bulkLen = 0
 	}
 	// 返回读取到的 msg，是否遇到 io 错误，以及错误信息
@@ -198,6 +220,9 @@ func readLine(bufReader *bufio.Reader, state *readState) ([]byte, bool, error) {
 }
 
 // parseMultiBulkHeader 解析多行字符串(数组)的首行头部信息
+// 针对 *3\r\n$3\r\nSET\r\n$3\r\nKEY\r\n$5\r\nVALUE\r\n 例子而言
+// 首先由 readLine 读取到 *3\r\n, 接下来会由  parseMultiBulkHeader 进行解析
+// 并维护 state *readState 中的状态
 // 多行字符串是有多行构成的
 // 每行都是一个简单的字符串
 // 多行字符串以 * 符号开头，后接一个数字，表示多行字符串的行数
@@ -207,7 +232,7 @@ func parseMultiBulkHeader(msg []byte, state *readState) error {
 	var err error
 	var expectedLine uint64
 
-	// 跳过第一个符号位，最后的 \r\n 计算实际的内容长度
+	// 跳过第一个符号位，跳过最后的 \r\n, 计算实际的内容长度
 	expectedLine, err = strconv.ParseUint(string(msg[1:len(msg)-2]), 10, 32)
 	if err != nil {
 		return errors.New("protocol error: " + string(msg))
@@ -252,6 +277,7 @@ func parseBulkHeader(msg []byte, state *readState) error {
 }
 
 // parseSingleLineReply 解析单行回复
+// 解析 +OK\r\n -ERR\r\n :5\r\n 这三种单行回复
 func parseSingleLineReply(msg []byte) (resp.Reply, error) {
 	// 去掉末尾的 \r\n
 	str := strings.TrimSuffix(string(msg), "\r\n")
@@ -277,8 +303,11 @@ func parseSingleLineReply(msg []byte) (resp.Reply, error) {
 // 用于读取 Redis 返回的多行字符串和简单字符串的每一行
 // 都是以 $ 开头的
 // 例如：SET KEY VALUE
-// *3\r\n$3\r\nSET\r\n$3\r\nKEY\r\n$5\r\nVALUE\r\n
+// 如：*3\r\n$3\r\nSET\r\n$3\r\nKEY\r\n$5\r\nVALUE\r\n
+// 情况1: $3\r\n
+// 情况2: SET\r\n
 func readBody(msg []byte, state *readState) error {
+	// 先去除掉最后的 \r\n
 	line := msg[0 : len(msg)-2]
 	var err error
 	if line[0] == '$' { // 如果是 $ 开头的话，就是一个 bulk reply
