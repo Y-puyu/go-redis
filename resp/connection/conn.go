@@ -34,6 +34,8 @@ func (c *Connection) RemoteAddr() net.Addr {
 // Close disconnect with the client
 // 等待 10s 关闭
 func (c *Connection) Close() error {
+	// 等待回复完毕后，关闭连接
+	// 或者10s内没有回复完毕，则关闭
 	c.waitingReply.WaitWithTimeout(10 * time.Second)
 	_ = c.conn.Close()
 	return nil
@@ -45,9 +47,13 @@ func (c *Connection) Write(b []byte) error {
 	if len(b) == 0 {
 		return nil
 	}
+	// 加锁，防止并发写
 	c.mu.Lock()
+	// 添加一个等待回复的任务, 表明有协程再给客户端回写数据
+	// 给 waitingReply 加1，表示正在回复
 	c.waitingReply.Add(1)
 	defer func() {
+		// 解锁，复原
 		c.waitingReply.Done()
 		c.mu.Unlock()
 	}()

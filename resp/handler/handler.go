@@ -21,6 +21,7 @@ import (
 )
 
 var (
+	// 未知错误
 	unknownErrReplyBytes = []byte("-ERR unknown\r\n")
 )
 
@@ -58,14 +59,16 @@ func (h *RespHandler) Handle(ctx context.Context, conn net.Conn) {
 
 	// 到来一个新的客户端连接，并添加到活跃连接列表中
 	client := connection.NewConn(conn)
-	h.activeConn.Store(client, 1)
+	h.activeConn.Store(client, struct{}{})
 
 	// 异步流式解析客户端请求
 	ch := parser.ParseStream(conn)
 	for payload := range ch {
+		// error 逻辑
 		if payload.Err != nil {
 			if payload.Err == io.EOF || // io.EOF 代表客户端关闭连接
 				errors.Is(payload.Err, io.ErrUnexpectedEOF) || // io.ErrUnexpectedEOF 代表客户端发送了一个不完整的请求
+				// 使用了被关闭的连接
 				strings.Contains(payload.Err.Error(), "use of closed network connection") {
 				// connection closed
 				h.closeClient(client)
@@ -96,6 +99,7 @@ func (h *RespHandler) Handle(ctx context.Context, conn net.Conn) {
 			continue
 		}
 
+		// exec 逻辑
 		// 执行命令
 		result := h.db.Exec(client, r.Args)
 		if result != nil {
