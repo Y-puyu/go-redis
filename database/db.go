@@ -13,6 +13,9 @@ import (
 type DB struct {
 	index int       // 当前 db 的索引
 	data  dict.Dict // key -> DataEntity 使用 dict 进行底层数据存储
+	// 直接将 AddAof 方法作为 DB 的成员变量
+	// 这样不用将 database 的 aofHandler 传递给 DB，里面过多多于的字段，这样写封装性更好
+	addAof func(CmdLine)
 }
 
 // ExecFunc is interface for command executor
@@ -30,6 +33,13 @@ type CmdLine = [][]byte
 func makeDB() *DB {
 	db := &DB{
 		data: dict.MakeSyncDict(),
+		// 这里初始化的时候一定需要给 addAof 一个空实现
+		// 因为初始化 database 的时候，会初始化 aofHandler 并 执行 handler.LoadAof()
+		// 将去读 aof 文件，并进行命令执行去恢复数据
+		// 此时也会调用到类似 string.execSet() 这个去恢复数据
+		// 那么就会调用到 db.addAof() 这个函数
+		// 所以，这里的 addAof 需要一个空实现，而非不赋初值，则为 nil，调用的话将报错
+		addAof: func(line CmdLine) {},
 	}
 	return db
 }

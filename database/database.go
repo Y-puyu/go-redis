@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"go-redis/aof"
 	"go-redis/config"
 	"go-redis/interface/resp"
 	"go-redis/lib/logger"
@@ -14,6 +15,9 @@ import (
 // Database is a set of multiple database set
 type Database struct {
 	dbSet []*DB
+	// handle aof persistence
+	// 创建一个 aofHandler，用于执行 aof 相关业务
+	aofHandler *aof.AofHandler
 }
 
 // NewDatabase creates a redis database,
@@ -29,6 +33,23 @@ func NewDatabase() *Database {
 		singleDB := makeDB()
 		singleDB.index = i
 		mdb.dbSet[i] = singleDB
+	}
+
+	// 初始化 Databases 时，并创建 aofHandler
+	if config.Properties.AppendOnly {
+		handler, err := aof.NewAOFHandler(mdb)
+		if err != nil {
+			panic(err)
+		}
+		mdb.aofHandler = handler
+
+		// 给每个 db 添加 addAof 方法
+		for _, db := range mdb.dbSet {
+			// go1.22 版本后，db 不会再产生闭包问题
+			db.addAof = func(line CmdLine) {
+				mdb.aofHandler.AddAof(db.index, line)
+			}
+		}
 	}
 	return mdb
 }

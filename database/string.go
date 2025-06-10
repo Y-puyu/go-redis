@@ -3,6 +3,7 @@ package database
 import (
 	"go-redis/interface/database"
 	"go-redis/interface/resp"
+	"go-redis/lib/utils"
 	"go-redis/resp/reply"
 )
 
@@ -29,6 +30,8 @@ func execSet(db *DB, args [][]byte) resp.Reply {
 		Data: value,
 	}
 	db.PutEntity(key, entity)
+	// 调用 aof 功能函数，将命令写入 aof 文件中
+	db.addAof(utils.ToCmdLine2("Set", args...))
 	return &reply.OkReply{}
 }
 
@@ -41,6 +44,7 @@ func execSetNX(db *DB, args [][]byte) resp.Reply {
 		Data: value,
 	}
 	result := db.PutIfAbsent(key, entity)
+	db.addAof(utils.ToCmdLine2("SetNx", args...))
 	return reply.MakeIntReply(int64(result))
 }
 
@@ -57,6 +61,7 @@ func execGetSet(db *DB, args [][]byte) resp.Reply {
 		return reply.MakeNullBulkReply()
 	}
 	old := entity.Data.([]byte)
+	db.addAof(utils.ToCmdLine2("GetSet", args...))
 	return reply.MakeBulkReply(old)
 }
 

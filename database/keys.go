@@ -2,6 +2,7 @@ package database
 
 import (
 	"go-redis/interface/resp"
+	"go-redis/lib/utils"
 	"go-redis/lib/wildcard"
 	"go-redis/resp/reply"
 )
@@ -17,6 +18,11 @@ func execDel(db *DB, args [][]byte) resp.Reply {
 	}
 
 	deleted := db.Removes(keys...)
+
+	// 如果真的删除了数据，则添加 AOF
+	if deleted > 0 {
+		db.addAof(utils.ToCmdLine2("Del", args...))
+	}
 
 	// 包装成 RESP 协议的整数返回形式
 	return reply.MakeIntReply(int64(deleted))
@@ -82,6 +88,7 @@ func execRename(db *DB, args [][]byte) resp.Reply {
 	// 更新 dest、删除 src
 	db.PutEntity(dest, entity)
 	db.Remove(src)
+	db.addAof(utils.ToCmdLine2("RenameNx", args...))
 	return &reply.OkReply{}
 }
 
@@ -108,6 +115,7 @@ func execRenameNx(db *DB, args [][]byte) resp.Reply {
 	db.Removes(src)
 	// 插入 K2
 	db.PutEntity(dest, entity)
+	db.addAof(utils.ToCmdLine2("Rename", args...))
 	// 返回操作数：1
 	return reply.MakeIntReply(1)
 }
