@@ -75,6 +75,7 @@ func (cluster *ClusterDatabase) Close() {
 var router = makeRouter()
 
 // Exec executes command on cluster
+// 集群的命令执行，代替单机版的命令执行
 func (cluster *ClusterDatabase) Exec(c resp.Connection, cmdLine [][]byte) (result resp.Reply) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -82,7 +83,10 @@ func (cluster *ClusterDatabase) Exec(c resp.Connection, cmdLine [][]byte) (resul
 			result = &reply.UnknownErrReply{}
 		}
 	}()
+
+	// 拿到第一个指令名称
 	cmdName := strings.ToLower(string(cmdLine[0]))
+	// 拿到方法
 	cmdFunc, ok := router[cmdName]
 	if !ok {
 		return reply.MakeErrReply("ERR unknown command '" + cmdName + "', or not supported in cluster mode")
