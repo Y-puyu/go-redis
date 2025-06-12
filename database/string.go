@@ -79,9 +79,9 @@ func execStrLen(db *DB, args [][]byte) resp.Reply {
 }
 
 func init() {
-	RegisterCommand("Get", execGet, 2)  // get k1
-	RegisterCommand("Set", execSet, -3) // set k1 v1 k2 v2...
-	RegisterCommand("SetNx", execSetNX, 3)
-	RegisterCommand("GetSet", execGetSet, 3)
-	RegisterCommand("StrLen", execStrLen, 2)
+	RegisterCommand("get", execGet, 2)  // get k1
+	RegisterCommand("set", execSet, -3) // set k1 v1 k2 v2...
+	RegisterCommand("setNx", execSetNX, 3)
+	RegisterCommand("getSet", execGetSet, 3)
+	RegisterCommand("strLen", execStrLen, 2)
 }

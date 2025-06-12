@@ -64,6 +64,7 @@ func MakeClusterDatabase() *ClusterDatabase {
 }
 
 // CmdFunc represents the handler of a redis command
+// 声明 集群命令处理函数
 type CmdFunc func(cluster *ClusterDatabase, c resp.Connection, cmdAndArgs [][]byte) resp.Reply
 
 // Close stops current node of cluster
