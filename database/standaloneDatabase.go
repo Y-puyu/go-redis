@@ -12,17 +12,18 @@ import (
 	"strings"
 )
 
-// Database is a set of multiple database set
-type Database struct {
+// StandaloneDatabase is a set of multiple database set
+// 一个单机版的 Redis 数据库
+type StandaloneDatabase struct {
 	dbSet []*DB
 	// handle aof persistence
 	// 创建一个 aofHandler，用于执行 aof 相关业务
 	aofHandler *aof.AofHandler
 }
 
-// NewDatabase creates a redis database,
-func NewDatabase() *Database {
-	mdb := &Database{}
+// NewStandaloneDatabase creates a standaloneDatabase redis database,
+func NewStandaloneDatabase() *StandaloneDatabase {
+	mdb := &StandaloneDatabase{}
 	if config.Properties.Databases == 0 {
 		config.Properties.Databases = 16
 	}
@@ -60,7 +61,7 @@ func NewDatabase() *Database {
 // cmdLine 有两种情况
 // 第一种: 和某一个 db 相关的 set k v、get k
 // 第二种: select 2 指定选择某个数据库的
-func (mdb *Database) Exec(c resp.Connection, cmdLine [][]byte) (result resp.Reply) {
+func (mdb *StandaloneDatabase) Exec(c resp.Connection, cmdLine [][]byte) (result resp.Reply) {
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Warn(fmt.Sprintf("error occurs: %v\n%s", err, string(debug.Stack())))
@@ -83,14 +84,14 @@ func (mdb *Database) Exec(c resp.Connection, cmdLine [][]byte) (result resp.Repl
 
 // Close graceful shutdown database
 // 不需要实现
-func (mdb *Database) Close() {}
+func (mdb *StandaloneDatabase) Close() {}
 
 // AfterClientClose is called when client closed
 // 不需要实现
-func (mdb *Database) AfterClientClose(c resp.Connection) {}
+func (mdb *StandaloneDatabase) AfterClientClose(c resp.Connection) {}
 
 // execSelect 选择数据库
-func execSelect(c resp.Connection, mdb *Database, args [][]byte) resp.Reply {
+func execSelect(c resp.Connection, mdb *StandaloneDatabase, args [][]byte) resp.Reply {
 	dbIndex, err := strconv.Atoi(string(args[0]))
 	if err != nil {
 		return reply.MakeErrReply("ERR invalid DB index")
